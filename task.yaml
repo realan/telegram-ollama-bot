@@ -1,0 +1,433 @@
+spec_version: '1.0'
+
+project:
+  name: 'telegram-bot-local-llm'
+  title: 'Telegram-бот с локальной LLM через Ollama и Python'
+  goal: >
+    Реализовать Telegram-бота на Python, который принимает текстовые сообщения,
+    отправляет каждое сообщение отдельно в локальную LLM через Ollama
+    и возвращает ответ пользователю в Telegram.
+
+product_scope:
+  stage: 'MVP'
+  main_flow:
+    - 'Пользователь отправляет текстовое сообщение в Telegram'
+    - 'Бот получает update через polling'
+    - 'Бот передает текст в локальную модель через Ollama'
+    - 'Бот получает ответ модели'
+    - 'Бот отправляет ответ обратно пользователю'
+  constraints:
+    - 'Использовать Telegram Bot API только через polling'
+    - 'Webhook не использовать'
+    - 'Каждое сообщение обрабатывать независимо'
+    - 'Историю диалога не хранить'
+    - 'БД не использовать'
+    - 'Работать только с текстовыми сообщениями'
+    - 'Не реализовывать RAG, tools, voice, image'
+
+tech_stack:
+  language: 'Python 3.11+'
+  bot_framework: 'aiogram'
+  llm_runtime: 'Ollama'
+  llm_transport:
+    preferred: 'official ollama python library'
+    fallback: 'HTTP REST API'
+  config: '.env'
+  packaging: 'requirements.txt'
+  architecture: 'modular monolith'
+
+repository_structure:
+  root:
+    - 'app/'
+    - 'tests/'
+    - '.env.example'
+    - 'requirements.txt'
+    - 'README.md'
+  app:
+    - 'main.py'
+    - 'config.py'
+    - 'logging_config.py'
+    - 'bot/router.py'
+    - 'bot/handlers/start.py'
+    - 'bot/handlers/help.py'
+    - 'bot/handlers/chat.py'
+    - 'services/chat_service.py'
+    - 'clients/ollama_client.py'
+    - 'utils/telegram_text.py'
+    - 'utils/exceptions.py'
+    - 'prompts/system_prompt.txt'
+
+environment:
+  variables:
+    - name: 'TELEGRAM_BOT_TOKEN'
+      required: true
+      description: 'Токен Telegram-бота'
+    - name: 'OLLAMA_BASE_URL'
+      required: false
+      default: 'http://localhost:11434'
+      description: 'Базовый URL Ollama'
+    - name: 'OLLAMA_MODEL'
+      required: true
+      example: 'llama3.1:8b'
+      description: 'Имя модели в Ollama'
+    - name: 'OLLAMA_TIMEOUT_SECONDS'
+      required: false
+      default: '120'
+      description: 'Таймаут запроса к Ollama'
+    - name: 'APP_LOG_LEVEL'
+      required: false
+      default: 'INFO'
+      description: 'Уровень логирования'
+    - name: 'SYSTEM_PROMPT_PATH'
+      required: false
+      default: 'app/prompts/system_prompt.txt'
+      description: 'Путь к system prompt'
+
+functional_requirements:
+  commands:
+    - command: '/start'
+      behavior: >
+        Отправляет приветствие, кратко объясняет,
+        что бот работает через локальную LLM в Ollama.
+    - command: '/help'
+      behavior: >
+        Показывает список доступных команд и ограничения MVP.
+  message_processing:
+    - 'Принимать только текстовые сообщения'
+    - 'Игнорировать пустые сообщения'
+    - 'Для каждого входящего сообщения выполнять отдельный запрос в Ollama'
+    - 'Не сохранять контекст прошлых сообщений'
+    - 'Не связывать новое сообщение с предыдущими'
+    - 'Возвращать только итоговый текстовый ответ'
+  llm_request_policy:
+    - 'Каждый запрос независим'
+    - 'Использовать system prompt из файла'
+    - 'Не хранить историю чата ни в памяти, ни в файлах'
+    - 'Не использовать пользовательскую сессию как контейнер для контекста'
+  unsupported_inputs:
+    - 'voice'
+    - 'photo'
+    - 'video'
+    - 'document'
+    - 'sticker'
+    - 'location'
+    - 'contact'
+
+non_functional_requirements:
+  simplicity:
+    - 'Код должен быть простым и читаемым'
+    - 'Без лишних абстракций'
+  reliability:
+    - 'Ошибка одного запроса не должна ронять процесс бота'
+    - 'Ошибки Telegram и Ollama должны корректно логироваться'
+  security:
+    - 'Не хардкодить токены и секреты'
+    - 'Все чувствительные данные хранить в .env'
+  extensibility:
+    - 'Структура должна позволять позже добавить memory, RAG, ACL, admin commands'
+  observability:
+    - 'Логировать запуск приложения'
+    - 'Логировать ошибки'
+    - 'Логировать факт входящего запроса без обязательного сохранения полного текста'
+
+architecture:
+  layers:
+    - name: 'Telegram layer'
+      responsibility: 'Получение update, маршрутизация команд, отправка ответов'
+    - name: 'Service layer'
+      responsibility: 'Подготовка входного текста и orchestration вызова модели'
+    - name: 'Client layer'
+      responsibility: 'Низкоуровневый вызов Ollama API'
+    - name: 'Utility layer'
+      responsibility: 'Разбиение длинных сообщений, общие исключения, вспомогательные функции'
+  rules:
+    - 'Handlers не должны содержать логику обращения к Ollama напрямую'
+    - 'Вызов Ollama делать только через clients/ollama_client.py'
+    - 'Telegram-specific форматирование не смешивать с логикой LLM'
+    - 'Все настройки читать централизованно через config.py'
+
+ollama_client_contract:
+  class_name: 'OllamaClient'
+  methods:
+    - name: 'generate_reply'
+      input:
+        user_message: 'str'
+        system_prompt: 'str | None'
+      output:
+        reply_text: 'str'
+      behavior:
+        - 'Принимает текст пользователя'
+        - 'Подставляет system prompt'
+        - 'Отправляет запрос в Ollama'
+        - 'Возвращает итоговый текст ответа'
+        - 'При ошибке бросает typed exception'
+  error_cases:
+    - 'Ollama недоступна'
+    - 'Модель не найдена'
+    - 'Таймаут запроса'
+    - 'Пустой ответ модели'
+    - 'Некорректный ответ API'
+
+service_contracts:
+  chat_service:
+    class_name: 'ChatService'
+    methods:
+      - name: 'handle_user_message'
+        input:
+          text: 'str'
+        output:
+          answer: 'str'
+        behavior:
+          - 'Проверяет входной текст'
+          - 'Загружает system prompt'
+          - 'Вызывает OllamaClient'
+          - 'Возвращает готовый ответ для Telegram'
+          - 'Не хранит историю диалога'
+
+telegram_handlers:
+  start_handler:
+    file: 'app/bot/handlers/start.py'
+    responsibilities:
+      - 'Обработка /start'
+  help_handler:
+    file: 'app/bot/handlers/help.py'
+    responsibilities:
+      - 'Обработка /help'
+  chat_handler:
+    file: 'app/bot/handlers/chat.py'
+    responsibilities:
+      - 'Обработка обычных текстовых сообщений'
+      - 'Передача текста в ChatService'
+      - 'Отправка ответа пользователю'
+      - 'Перехват ошибок и возврат понятного сообщения'
+
+message_output_policy:
+  telegram_limits:
+    split_long_messages: true
+    chunking_required: true
+  chunking_rules:
+    - 'Если ответ длиннее лимита Telegram, разбивать его на части'
+    - 'Не резать посреди слова, если это можно избежать'
+    - 'Сохранять порядок частей'
+  formatting:
+    - 'Использовать простой текст'
+    - 'Не усложнять markdown-разметку в MVP'
+
+error_handling:
+  user_visible_messages:
+    ollama_unavailable: 'Локальная модель сейчас недоступна. Проверь запуск Ollama и попробуй снова.'
+    model_not_found: 'Указанная модель не найдена в Ollama. Проверь конфигурацию.'
+    timeout: 'Модель отвечает слишком долго. Попробуй еще раз.'
+    generic: 'Произошла ошибка при обработке сообщения.'
+  logging_rules:
+    - 'Логировать stack trace для внутренних ошибок'
+    - 'Не выводить токены и секреты в логи'
+    - 'Не логировать полный текст сообщений без необходимости'
+
+logging:
+  requirements:
+    - 'Настроить стандартный logging'
+    - 'Вывод в stdout'
+    - 'Поддержка уровня из APP_LOG_LEVEL'
+  events:
+    - 'startup'
+    - 'bot polling started'
+    - 'incoming text message metadata'
+    - 'ollama request started'
+    - 'ollama request failed'
+    - 'telegram send failed'
+
+startup_requirements:
+  checks_on_boot:
+    - 'Проверить наличие TELEGRAM_BOT_TOKEN'
+    - 'Проверить наличие OLLAMA_MODEL'
+    - 'Проверить доступность system prompt файла'
+  optional_checks:
+    - 'Опционально проверить доступность Ollama при старте'
+  startup_behavior:
+    - 'Если обязательная конфигурация отсутствует, завершить процесс с понятной ошибкой'
+
+implementation_tasks:
+  - id: 'TASK-001'
+    title: 'Создать структуру проекта'
+    deliverables:
+      - 'app/'
+      - 'tests/'
+      - '.env.example'
+      - 'requirements.txt'
+      - 'README.md'
+
+  - id: 'TASK-002'
+    title: 'Реализовать конфигурацию'
+    deliverables:
+      - 'app/config.py'
+      - 'Чтение env-переменных'
+      - 'Проверка обязательных параметров'
+
+  - id: 'TASK-003'
+    title: 'Настроить логирование'
+    deliverables:
+      - 'app/logging_config.py'
+      - 'Единая настройка logging'
+
+  - id: 'TASK-004'
+    title: 'Подключить aiogram и polling'
+    deliverables:
+      - 'app/main.py'
+      - 'app/bot/router.py'
+      - 'Запуск через polling'
+
+  - id: 'TASK-005'
+    title: 'Реализовать handlers /start и /help'
+    deliverables:
+      - 'app/bot/handlers/start.py'
+      - 'app/bot/handlers/help.py'
+
+  - id: 'TASK-006'
+    title: 'Реализовать Ollama client'
+    deliverables:
+      - 'app/clients/ollama_client.py'
+      - 'Метод generate_reply'
+      - 'Таймауты'
+      - 'Typed exceptions'
+
+  - id: 'TASK-007'
+    title: 'Реализовать ChatService'
+    deliverables:
+      - 'app/services/chat_service.py'
+      - 'Stateless обработка одного сообщения'
+
+  - id: 'TASK-008'
+    title: 'Реализовать handler обычных сообщений'
+    deliverables:
+      - 'app/bot/handlers/chat.py'
+      - 'Передача текста в ChatService'
+      - 'Возврат ответа пользователю'
+
+  - id: 'TASK-009'
+    title: 'Добавить разбиение длинных сообщений'
+    deliverables:
+      - 'app/utils/telegram_text.py'
+      - 'Функция chunking'
+
+  - id: 'TASK-010'
+    title: 'Добавить system prompt'
+    deliverables:
+      - 'app/prompts/system_prompt.txt'
+      - 'Загрузка prompt из файла'
+
+  - id: 'TASK-011'
+    title: 'Подготовить README'
+    deliverables:
+      - 'Инструкция по установке зависимостей'
+      - 'Инструкция по установке и запуску Ollama'
+      - 'Инструкция по ollama pull модели'
+      - 'Инструкция по запуску бота'
+
+  - id: 'TASK-012'
+    title: 'Добавить базовые тесты'
+    deliverables:
+      - 'tests/test_config.py'
+      - 'tests/test_telegram_text.py'
+      - 'tests/test_chat_service.py'
+
+requirements_txt:
+  required_packages:
+    - 'aiogram'
+    - 'python-dotenv'
+    - 'ollama'
+  optional_packages:
+    - 'pytest'
+    - 'pytest-asyncio'
+
+testing:
+  minimum_tests:
+    - name: 'config loads env correctly'
+    - name: 'chunking splits long telegram messages safely'
+    - name: 'chat service handles Ollama exceptions'
+    - name: 'empty text is rejected or ignored correctly'
+  test_strategy:
+    - 'Не требовать реальный Telegram API в unit tests'
+    - 'Не требовать реальный Ollama в unit tests'
+    - 'Мокать клиент модели'
+
+acceptance_criteria:
+  - 'Проект запускается локально'
+  - 'Бот успешно стартует в polling-режиме'
+  - 'Команда /start работает'
+  - 'Команда /help работает'
+  - 'Обычное текстовое сообщение уходит в Ollama и возвращает ответ'
+  - 'История диалога не сохраняется'
+  - 'Каждое сообщение обрабатывается независимо'
+  - 'Если Ollama недоступна, пользователь получает понятное сообщение'
+  - 'Если ответ длинный, он отправляется несколькими сообщениями'
+  - 'Все настройки берутся из .env'
+  - 'README достаточен для запуска проекта с нуля'
+
+explicitly_out_of_scope:
+  - 'Webhook'
+  - 'Redis'
+  - 'PostgreSQL'
+  - 'SQLite'
+  - 'Session memory'
+  - 'Conversation memory'
+  - 'RAG'
+  - 'Embeddings'
+  - 'Admin panel'
+  - 'Docker'
+  - 'Docker Compose'
+  - 'Streaming tokens into Telegram'
+  - 'Voice input/output'
+  - 'Whisper'
+  - 'Image generation'
+  - 'Access control lists beyond basic future extensibility'
+
+future_extensions:
+  - 'Ограничение доступа по whitelist Telegram user_id'
+  - 'Поддержка нескольких моделей'
+  - 'Команда переключения модели'
+  - 'In-memory история на короткую сессию'
+  - 'Хранение истории в Redis/PostgreSQL'
+  - 'RAG по файлам'
+  - 'Webhook deployment'
+  - 'Dockerization'
+  - 'Streaming response'
+  - 'Голосовые сообщения'
+
+codex_instructions:
+  implementation_style:
+    - 'Писать чистый, минималистичный код'
+    - 'Не усложнять архитектуру'
+    - 'Использовать type hints'
+    - 'Держать файлы короткими и понятными'
+    - 'Следовать указанной структуре каталогов'
+  do_not:
+    - 'Не добавлять функции вне scope MVP'
+    - 'Не использовать webhook'
+    - 'Не хранить историю диалога'
+    - 'Не подключать БД'
+    - 'Не внедрять RAG'
+    - 'Не делать преждевременную оптимизацию'
+  output_expected:
+    - 'Полный исходный код проекта'
+    - 'requirements.txt'
+    - '.env.example'
+    - 'README.md'
+    - 'минимальные тесты'
+
+runbook:
+  prerequisites:
+    - 'Установлен Python 3.11+'
+    - 'Установлен Ollama'
+    - 'Выполнен ollama pull нужной модели'
+    - 'Получен Telegram bot token'
+  steps:
+    - 'Создать .env на основе .env.example'
+    - 'Установить зависимости из requirements.txt'
+    - 'Запустить Ollama'
+    - 'Запустить python -m app.main'
+  smoke_test:
+    - 'Открыть Telegram'
+    - 'Отправить /start'
+    - 'Отправить произвольный текст'
+    - 'Проверить, что пришел ответ от локальной модели'
