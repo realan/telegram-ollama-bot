@@ -1,0 +1,187 @@
+version: 1
+
+phase:
+  id: phase-8-clear-command
+  title: Команда /clear для сброса истории
+  status: planned
+  updated_at: 2026-04-15
+
+source:
+  roadmap: _docs/roadmap.yaml
+  context_dump: _docs/context-dump.md
+  architecture_docs:
+    - _docs/architecture/system-overview.md
+    - _docs/architecture/components.md
+    - _docs/architecture/runtime-flows.md
+
+required_context:
+  always_include:
+    - _docs/context-dump.md
+    - _docs/roadmap.yaml
+    - _docs/specs/phase-8-clear-command.yaml
+  architecture_required:
+    - _docs/architecture/system-overview.md
+    - _docs/architecture/components.md
+  architecture_optional:
+    - _docs/architecture/runtime-flows.md
+    - _docs/architecture/evolution-guidelines.md
+  optional:
+    - _docs/decisions/
+
+chat_bundle:
+  - _docs/context-dump.md
+  - _docs/roadmap.yaml
+  - _docs/specs/phase-8-clear-command.yaml
+  - _docs/architecture/system-overview.md
+  - _docs/architecture/components.md
+
+chat_prompt_template: |
+  Контекст проекта приложен в документах из `chat_bundle`.
+
+  Работай только в рамках spec:
+  `_docs/specs/phase-8-clear-command.yaml`
+
+  Сначала изучи файлы из `chat_bundle`.
+
+  Задача:
+  выполнить только `phase-8-clear-command`.
+
+  Ограничения:
+  - не выходить за scope, описанный в spec
+  - не добавлять новые режимы, флаги или конфигурацию, кроме указанных
+  - не трогать ChatService, OllamaClient и логику суммаризации
+
+  Ожидаемый результат:
+  - рабочая команда /clear в боте
+  - тесты на сброс истории
+  - краткий отчет по шаблону `_docs/reports/phase-report.template.md`
+
+  После завершения фазы:
+  - сохрани краткий отчет в `_docs/reports/phase-8-clear-command-report.md`
+  - зафиксируй в отчете: что сделано, что не сделано, какие решения приняты, что важно для следующей фазы
+
+objective: >
+  Добавить команду /clear, которая сбрасывает историю диалога текущего пользователя.
+  После выполнения команды следующий запрос обрабатывается без предыдущего контекста.
+
+problem_statement:
+  - Сейчас история пользователя накапливается до рестарта процесса и не может быть сброшена вручную.
+  - Для демонстрации разницы между ответами с контекстом и без нужен явный способ очистить историю.
+  - Без /clear пользователь не может начать новый диалог в рамках одной сессии бота.
+
+scope_in:
+  - Новый handler для команды /clear.
+  - Вызов conversation_store.clear(user_id) при получении команды.
+  - Текстовое подтверждение сброса пользователю.
+  - Регистрация handler в router.
+  - Тесты на корректный сброс истории и изоляцию между пользователями.
+
+scope_out:
+  - Режим «без контекста» как постоянный переключаемый флаг.
+  - Новые env-переменные или конфигурация.
+  - Изменения в ChatService, OllamaClient, ConversationStore (только вызов существующего clear).
+  - Персистентное хранилище истории.
+  - Команды /history, /nocontext и любые другие новые команды.
+
+dependencies:
+  phases_required:
+    - phase-2-memory
+    - phase-7-tests
+  assumptions:
+    - ConversationStore.clear(user_id) уже реализован и корректно удаляет историю.
+    - Telegram user_id доступен в handler так же, как в chat_handler.
+    - ChatService внедряется в dispatcher как dependency (паттерн уже используется в chat_handler).
+
+implementation_notes:
+  - Handler /clear должен получать conversation_store напрямую из dispatcher,
+    без прохождения через ChatService — это не бизнес-логика, а операция над хранилищем.
+  - Альтернативно: добавить метод clear_history(user_id) в ChatService, чтобы handler
+    не знал о ConversationStore. Предпочтительно, если политика доступа к store
+    должна быть централизована.
+  - Не использовать aiogram FSM — операция атомарна и не требует состояний.
+  - Текст ответа пользователю должен быть коротким и однозначным.
+
+files_to_touch:
+  required:
+    - app/bot/handlers/clear.py  # новый файл
+    - app/bot/router.py
+  allowed:
+    - app/services/chat_service.py  # только если решено добавить clear_history()
+    - tests/
+    - _docs/
+  avoid:
+    - app/memory/conversation_store.py  # ConversationStore.clear уже есть
+    - app/clients/ollama_client.py
+    - app/config.py
+    - app/main.py
+
+deliverables:
+  code:
+    - app/bot/handlers/clear.py — handler команды /clear.
+    - Обновлённый app/bot/router.py с подключённым clear router.
+  docs:
+    - Отчет по фазе в _docs/reports/phase-8-clear-command-report.md.
+  tests:
+    - Тест: после /clear история пользователя пуста.
+    - Тест: /clear одного пользователя не затрагивает историю другого.
+    - Тест: после /clear следующий запрос к ChatService идёт без предыдущей истории.
+
+tasks:
+  - id: clear-1
+    title: Добавить handler команды /clear
+    status: planned
+    description: >
+      Создать app/bot/handlers/clear.py с handler для команды /clear.
+      Handler получает user_id из message.from_user, вызывает clear на хранилище
+      и отправляет пользователю подтверждение.
+    notes:
+      - Если пользователь вызывает /clear при пустой истории — ответить тем же подтверждением, не падать.
+      - Текст подтверждения: что-то вроде "История диалога очищена. Начинаем сначала."
+
+  - id: clear-2
+    title: Зарегистрировать router
+    status: planned
+    description: >
+      Подключить router из clear.py в app/bot/router.py по аналогии с chat и start handlers.
+    notes:
+      - Порядок регистрации роутеров важен: /clear должен быть зарегистрирован раньше
+        общего text-handler, чтобы команда не перехватывалась chat_handler.
+
+  - id: clear-3
+    title: Покрыть тестами
+    status: planned
+    description: >
+      Добавить тесты, проверяющие корректный сброс истории.
+    notes:
+      - Тесты можно добавить в существующий test_chat_service.py или в новый файл
+        tests/test_clear_command.py.
+
+acceptance_criteria:
+  - Команда /clear доступна в боте и отвечает подтверждением.
+  - После /clear conversation_store не содержит сообщений для данного user_id.
+  - /clear одного пользователя не затрагивает историю другого.
+  - При вызове /clear с пустой историей бот не падает.
+  - Новая логика покрыта автотестами.
+
+test_plan:
+  automated:
+    - Проверить, что после clear история пользователя пуста (read возвращает []).
+    - Проверить изоляцию: clear user_A не трогает историю user_B.
+    - Проверить, что следующий handle_user_message после clear не получает предыдущих сообщений.
+  manual:
+    - Отправить несколько сообщений боту, затем /clear, затем спросить что-то связанное.
+    - Убедиться, что модель не помнит контекст до /clear.
+
+risks:
+  - Если handler получает store напрямую, а не через ChatService, слой разграничения немного размывается.
+    Принятый компромисс: операция тривиальна, введение обёртки избыточно.
+
+completion_update:
+  roadmap:
+    - Обновить phase-8-clear-command.status на done.
+    - Обновить статусы clear-1, clear-2, clear-3.
+  context_dump:
+    - Добавить /clear в список доступных команд бота.
+    - Обновить Implemented Phases.
+  report:
+    - Сохранить отчет в _docs/reports/phase-8-clear-command-report.md.

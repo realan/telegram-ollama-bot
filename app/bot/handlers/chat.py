@@ -32,13 +32,19 @@ UNSUPPORTED_INPUT_MESSAGE = "В этом MVP я обрабатываю толь�
 
 @router.message(F.text)
 async def chat_handler(message: Message, chat_service: ChatService) -> None:
+    user_id = message.from_user.id if message.from_user else None
     logger.info(
         "incoming text message metadata",
-        extra={"chat_id": message.chat.id, "user_id": message.from_user.id if message.from_user else None},
+        extra={"chat_id": message.chat.id, "user_id": user_id},
     )
 
+    if user_id is None:
+        logger.error("telegram message has no from_user", extra={"chat_id": message.chat.id})
+        await message.answer(GENERIC_ERROR_MESSAGE)
+        return
+
     try:
-        reply = await chat_service.handle_user_message(message.text or "")
+        reply = await chat_service.handle_user_message(user_id, message.text or "")
     except ValidationError:
         await message.answer(EMPTY_TEXT_MESSAGE)
         return

@@ -1,0 +1,275 @@
+version: 1
+
+phase:
+  id: phase-1-design
+  title: Архитектурная подготовка
+  status: done
+  updated_at: 2026-04-14
+
+source:
+  roadmap: _docs/roadmap.yaml
+  context_dump: _docs/context-dump.md
+  architecture_docs:
+    - _docs/architecture/system-overview.md
+    - _docs/architecture/components.md
+    - _docs/architecture/runtime-flows.md
+    - _docs/architecture/evolution-guidelines.md
+
+required_context:
+  always_include:
+    - _docs/context-dump.md
+    - _docs/roadmap.yaml
+    - _docs/specs/phase-1-design.yaml
+  architecture_required:
+    - _docs/architecture/system-overview.md
+    - _docs/architecture/components.md
+  architecture_optional:
+    - _docs/architecture/runtime-flows.md
+    - _docs/architecture/evolution-guidelines.md
+  optional:
+    - _docs/decisions/
+  note: >
+    Для этой фазы ключевыми являются документы по архитектурным границам и
+    модулям; runtime flows полезны, но вторичны.
+
+chat_bundle:
+  - _docs/context-dump.md
+  - _docs/roadmap.yaml
+  - _docs/specs/phase-1-design.yaml
+  - _docs/architecture/system-overview.md
+  - _docs/architecture/components.md
+
+chat_prompt_template: |
+  Контекст проекта приложен в документах из `chat_bundle`.
+
+  Работай только в рамках spec:
+  `_docs/specs/phase-1-design.yaml`
+
+  Сначала изучи:
+  - `_docs/context-dump.md`
+  - `_docs/roadmap.yaml`
+  - `_docs/specs/phase-1-design.yaml`
+  - `_docs/architecture/system-overview.md`
+  - `_docs/architecture/components.md`
+
+  Задача:
+  выполнить только `phase-1-design`.
+
+  Ограничения:
+  - не выходить за scope, описанный в spec
+  - не начинать реализацию следующих фаз
+  - если для фиксации решений достаточно документации, не делать лишних кодовых изменений
+  - обновить связанные документы только если это требуется по spec
+
+  Ожидаемый результат:
+  - завершенная фаза `phase-1-design`
+  - зафиксированный контракт messages context
+  - зафиксированная memory abstraction
+  - зафиксированная context policy
+  - краткий отчет по шаблону `_docs/reports/phase-report.template.md`
+
+  После завершения фазы:
+  - сохрани краткий отчет в `_docs/reports/phase-1-design-report.md`
+  - используй шаблон `_docs/reports/phase-report.template.md`
+  - зафиксируй в отчете: что сделано, что не сделано, какие решения приняты, какие отклонения от spec были и что важно для следующей фазы
+
+objective: >
+  Зафиксировать архитектурный контракт для следующей итерации проекта:
+  единый messages context, memory abstraction по пользователям и policy
+  ограничения контекста, чтобы следующие фазы можно было реализовывать
+  последовательно и без размывания границ между слоями.
+
+problem_statement:
+  - Текущий MVP обрабатывает каждое сообщение изолированно и не имеет модели памяти.
+  - В roadmap уже запланированы память, trimming, summarization и observability, но без согласованного контракта эти фазы легко смешают transport, service и model integration.
+  - Сейчас OllamaClient работает с одиночным prompt, а не с полным messages context.
+  - Нужен проектный слой решений до начала реализации следующих фаз.
+
+scope_in:
+  - Зафиксировать единый внутренний формат контекста `messages` с полями `role` и `content`.
+  - Определить допустимые роли для проекта: `system`, `user`, `assistant`, `summary`.
+  - Описать, как system prompt будет входить в фактический контекст модели.
+  - Спроектировать abstraction для хранения истории по `user_id`.
+  - Определить, как summary будет сосуществовать с обычной историей.
+  - Зафиксировать policy ограничения контекста: базовая стратегия, пороги и инварианты.
+  - Зафиксировать, какие модули будут расширяться в следующих фазах.
+
+scope_out:
+  - Реализация полноценной памяти в runtime.
+  - Реализация trimming истории в коде.
+  - Реализация summarization workflow.
+  - Перевод OllamaClient на новый messages API в коде.
+  - Полноценное логирование контекста и токенов.
+  - Большой рефакторинг текущего working MVP без необходимости.
+
+dependencies:
+  phases_required: []
+  assumptions:
+    - Текущий MVP считается рабочей baseline-версией.
+    - На ближайшей итерации допустимо in-memory хранение истории без БД.
+    - Telegram handlers должны оставаться thin boundary-слоем.
+    - Все решения должны быть совместимы с дальнейшими фазами roadmap.
+
+implementation_notes:
+  - Эта фаза в первую очередь документальная и контрактная, а не feature-реализация.
+  - Нельзя смешивать memory decisions с Telegram-specific деталями.
+  - Нужно сохранить текущую модульную структуру и избегать преждевременных абстракций.
+  - Если предлагается новый модуль, нужно явно указать его ответственность и место в дереве `app/`.
+  - Подсчет токенов пока можно оставить на уровне будущего контракта, без конкретной библиотеки.
+
+files_to_touch:
+  required:
+    - _docs/specs/phase-1-design.yaml
+  allowed:
+    - _docs/roadmap.yaml
+    - _docs/context-dump.md
+    - _docs/architecture/
+    - _docs/decisions/
+  avoid:
+    - app/main.py
+    - app/bot/handlers/
+    - app/services/chat_service.py
+    - app/clients/ollama_client.py
+    - tests/
+
+deliverables:
+  code:
+    - Кодовые изменения не обязательны, если для фиксации контракта достаточно документации.
+    - Допустимо добавить ADR или design doc с будущими интерфейсами и структурами данных.
+  docs:
+    - Зафиксированный phase spec для `phase-1-design`.
+    - При необходимости ADR по memory store и context contract.
+    - Уточнения в архитектурной документации, если по ходу появились новые правила.
+  tests:
+    - Автотесты не обязательны, так как фаза проектная.
+    - Допустим список test scenarios для будущих фаз.
+
+tasks:
+  - id: design-1
+    title: Зафиксировать формат контекста
+    status: done
+    description: >
+      Определить единый runtime-контракт для контекста модели: массив сообщений
+      в формате `{role, content}`, порядок элементов, допустимые роли и положение
+      system prompt в итоговом messages context.
+    notes:
+      - Нужно явно описать разницу между обычным assistant message и summary message.
+      - Нужно зафиксировать, включается ли summary в тот же массив messages или хранится отдельно и материализуется при сборке контекста.
+
+  - id: design-2
+    title: Спроектировать memory abstraction
+    status: done
+    description: >
+      Описать интерфейс хранения истории по пользователям, минимальный набор
+      операций и принципы сегрегации по `user_id`.
+    notes:
+      - Базовый кандидат: `ConversationStore` или `HistoryStore`.
+      - Нужно явно определить операции чтения, append, replace_after_summary и clear при необходимости.
+
+  - id: design-3
+    title: Определить policy ограничения контекста
+    status: done
+    description: >
+      Выбрать основной способ ограничения контекста и сформулировать инварианты,
+      которые последующие фазы обязаны сохранять.
+    notes:
+      - Базовая стратегия: ограничение по количеству сообщений.
+      - Дополнительная защита: ограничение по суммарной длине текста.
+      - Новый user message нельзя удалять.
+      - System prompt всегда должен идти первым в фактическом контексте.
+
+  - id: design-4
+    title: Зафиксировать порядок следующих фаз
+    status: done
+    description: >
+      Проверить, что решения этой фазы не конфликтуют с `phase-2-memory`,
+      `phase-5-system-prompt`, `phase-4-summarization` и `phase-6-observability`.
+    notes:
+      - Нужно подтвердить, что выбранный contract пригоден для summary и logging.
+
+acceptance_criteria:
+  - Есть явное описание структуры messages context.
+  - Есть явное описание memory abstraction и его ответственности.
+  - Есть зафиксированная context policy с порогами или правилами выбора порогов.
+  - Из документации понятно, какие файлы и модули будут меняться в следующих фазах.
+  - Спецификация не расширяет scope до реализации функциональности следующих фаз.
+
+test_plan:
+  automated:
+    - Автотесты не требуются для завершения этой фазы.
+  manual:
+    - Проверить, что любой новый чат с этой phase spec понимает границы задачи без чтения всего roadmap.
+    - Проверить, что из документа однозначно следует, как строить phase-2 и phase-5.
+
+risks:
+  - Слишком абстрактный дизайн без привязки к существующему коду ухудшит исполнимость следующих фаз.
+  - Слишком детализированный дизайн может зафиксировать лишние решения раньше времени.
+  - Если не определить roles и invariants сейчас, в следующих фазах появятся несовместимые локальные решения.
+
+decision_summary:
+  messages_context:
+    runtime_format: "ordered array of `{role, content}` items"
+    allowed_roles:
+      - system
+      - user
+      - assistant
+      - summary
+    ordering_rules:
+      - "system prompt не хранится в user history и материализуется при сборке фактического model context"
+      - "system message всегда идет первым элементом фактического context"
+      - "summary, если существует, хранится в том же history array и представляет старую часть диалога"
+      - "свежие user/assistant сообщения идут после summary в хронологическом порядке"
+    role_notes:
+      assistant: "реальный ответ модели пользователю"
+      summary: "сжатое представление старой истории; это внутренняя runtime-роль проекта"
+  memory_abstraction:
+    name: ConversationStore
+    segmentation_key: user_id
+    minimal_operations:
+      - read
+      - append
+      - append_many
+      - replace_after_summary
+      - clear
+    rules:
+      - "store хранит только per-user history и не знает про Telegram-specific объекты"
+      - "решение о сборке фактического model context остается в сервисном слое"
+      - "ближайшая реализация допустима как in-memory store в новом модуле `app/memory/`"
+  context_policy:
+    primary_strategy: keep_recent_messages_by_count
+    secondary_strategy: trim_by_total_text_length
+    invariants:
+      - "новый user message нельзя удалять"
+      - "system prompt всегда идет первым в фактическом context"
+      - "актуальный summary нельзя терять раньше свежего хвоста"
+      - "порядок сообщений после trim сохраняется"
+    thresholds:
+      summary_trigger_messages:
+        default: 5
+        rule: "должен быть меньше `max_history_messages`"
+      max_history_messages:
+        rule: "должен стать конфигурируемым в phase-3"
+      max_context_chars:
+        rule: "должен стать secondary safety limit в phase-3"
+  next_phase_impact:
+    phase-2-memory:
+      - "реализует `ConversationStore` и per-user in-memory history"
+      - "меняет `ChatService` и boundary в handler только для передачи `user_id`"
+    phase-3-context-limits:
+      - "вводит конфиг лимитов и trimming по зафиксированным инвариантам"
+    phase-4-summarization:
+      - "создает summary message и использует `replace_after_summary`"
+    phase-5-system-prompt:
+      - "переводит model client на messages API и materialization provider-facing context"
+    phase-6-observability:
+      - "логирует уже зафиксированный единый messages context и его размер"
+
+completion_update:
+  roadmap:
+    - Обновить `phase-1-design.status` на `done` или `in_progress`.
+    - При необходимости обновить статусы `design-1`, `design-2`, `design-3`, `design-4`.
+    - При появлении ADR добавить ссылку или примечание в roadmap.
+  context_dump:
+    - Обновить `Last updated after`.
+    - Обновить `Implemented Phases`.
+    - Добавить краткое описание принятого context contract и memory design.

@@ -1,0 +1,174 @@
+version: 1
+
+phase:
+  id: phase-6-observability
+  title: Логирование контекста и его размера
+  status: done
+  updated_at: 2026-04-15
+
+source:
+  roadmap: _docs/roadmap.yaml
+  context_dump: _docs/context-dump.md
+  architecture_docs:
+    - _docs/architecture/system-overview.md
+    - _docs/architecture/components.md
+    - _docs/architecture/runtime-flows.md
+    - _docs/architecture/evolution-guidelines.md
+  prerequisite_specs:
+    - _docs/specs/phase-5-system-prompt.yaml
+
+required_context:
+  always_include:
+    - _docs/context-dump.md
+    - _docs/roadmap.yaml
+    - _docs/specs/phase-6-observability.yaml
+    - _docs/specs/phase-5-system-prompt.yaml
+  architecture_required:
+    - _docs/architecture/runtime-flows.md
+    - _docs/architecture/components.md
+  architecture_optional:
+    - _docs/architecture/system-overview.md
+    - _docs/architecture/evolution-guidelines.md
+  optional:
+    - _docs/decisions/
+
+chat_bundle:
+  - _docs/context-dump.md
+  - _docs/roadmap.yaml
+  - _docs/specs/phase-6-observability.yaml
+  - _docs/specs/phase-5-system-prompt.yaml
+  - _docs/architecture/components.md
+  - _docs/architecture/runtime-flows.md
+
+chat_prompt_template: |
+  Контекст проекта приложен в документах из `chat_bundle`.
+
+  Работай только в рамках spec:
+  `_docs/specs/phase-6-observability.yaml`
+
+  Сначала изучи файлы из `chat_bundle`.
+
+  Задача:
+  выполнить только `phase-6-observability`.
+
+  Ограничения:
+  - не выходить за scope, описанный в spec
+  - не добавлять внешние observability-системы
+  - сосредоточиться на логировании контекста и его размера
+  - обновить связанные документы только если это требуется по spec
+
+  Ожидаемый результат:
+  - логирование полного messages context
+  - логирование размеров контекста
+  - отсутствие секретов в логах
+  - краткий отчет по шаблону `_docs/reports/phase-report.template.md`
+
+  После завершения фазы:
+  - сохрани краткий отчет в `_docs/reports/phase-6-observability-report.md`
+  - используй шаблон `_docs/reports/phase-report.template.md`
+  - зафиксируй в отчете: что сделано, что не сделано, какие решения приняты, какие отклонения от spec были и что важно для следующей фазы
+
+objective: >
+  Сделать вход в модель наблюдаемым: логировать полный messages context, тип вызова
+  и размер контекста перед каждым LLM request.
+
+problem_statement:
+  - Сейчас видно не полный контекст, а только факт вызова модели.
+  - Без наблюдаемости сложно проверять память, trimming и summary.
+  - Нужно видеть, что именно получает модель и насколько этот контекст велик.
+
+scope_in:
+  - Логировать полный messages context перед вызовом модели.
+  - Логировать тип вызова: обычный ответ или summary generation.
+  - Логировать размер контекста: количество сообщений и длину текста.
+  - Логировать оценку токенов, если точный tokenizer недоступен.
+  - Защититься от утечки секретов в логах.
+
+scope_out:
+  - Полноценные метрики, tracing и внешние observability-системы.
+  - Production-grade redaction всего пользовательского контента.
+  - Смена существующего logging framework.
+
+dependencies:
+  phases_required:
+    - phase-5-system-prompt
+  assumptions:
+    - Контекст уже собирается как messages array.
+    - Есть distinction между regular reply и summary workflow либо он будет совместим.
+    - Базовое логирование через стандартный `logging` остается.
+
+implementation_notes:
+  - Формат логов должен быть удобен для чтения и отладки.
+  - Если токены считаются приблизительно, это должно быть явно отражено в логах.
+  - Нельзя логировать bot token и конфигурационные секреты.
+  - Стоит предусмотреть конфиг-флаг для отключения полного контекста позже, даже если в этой фазе он включен по умолчанию.
+
+files_to_touch:
+  required:
+    - app/clients/ollama_client.py
+    - app/config.py
+  allowed:
+    - app/services/chat_service.py
+    - app/logging_config.py
+    - app/
+    - tests/
+    - _docs/
+  avoid:
+    - unrelated behavioral changes в reply flow
+
+deliverables:
+  code:
+    - Полное логирование messages context.
+    - Подсчет размера контекста и оценка токенов.
+    - Конфиг или policy-флаг для этого логирования.
+  docs:
+    - Обновление `_docs/context-dump.md` с описанием наблюдаемости и рисков.
+  tests:
+    - Тесты на логирование контекста и отсутствие секретов.
+
+tasks:
+  - id: obs-1
+    title: Логировать полный контекст
+    status: done
+    description: >
+      Перед каждым вызовом модели логировать весь messages context и тип вызова.
+
+  - id: obs-2
+    title: Логировать размер контекста
+    status: done
+    description: >
+      Добавить логирование message count, суммарной длины текста и токенов
+      или их оценочного эквивалента.
+
+  - id: obs-3
+    title: Проверить безопасность логов
+    status: done
+    description: >
+      Исключить секреты из логов и явно задокументировать риски логирования пользовательского контента.
+
+acceptance_criteria:
+  - Перед вызовом модели логируется полный контекст.
+  - В логах есть тип вызова.
+  - В логах есть размер контекста и токен-каунт или его оценка.
+  - Секреты не попадают в логи.
+
+test_plan:
+  automated:
+    - Тест на наличие context log перед модельным вызовом.
+    - Тест на наличие size metrics в логах.
+    - Тест на отсутствие секретов в логах.
+  manual:
+    - Проверить глазами, что по логам можно понять, что именно ушло в модель.
+
+risks:
+  - Полное логирование контекста может быть слишком шумным.
+  - Логи могут стать чувствительными для production.
+  - Оценочный токен-каунт может вводить в заблуждение, если не пометить его как estimate.
+
+completion_update:
+  roadmap:
+    - Обновить `phase-6-observability.status`.
+    - Обновить статусы `obs-1`, `obs-2`, `obs-3`.
+  context_dump:
+    - Обновить `Current State` и `Known Limitations`.
+    - Добавить наблюдаемость контекста как реализованную возможность.

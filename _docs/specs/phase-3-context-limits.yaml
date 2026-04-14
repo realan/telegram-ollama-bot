@@ -1,0 +1,184 @@
+version: 1
+
+phase:
+  id: phase-3-context-limits
+  title: Ограничение размера контекста
+  status: done
+  updated_at: 2026-04-14
+
+source:
+  roadmap: _docs/roadmap.yaml
+  context_dump: _docs/context-dump.md
+  architecture_docs:
+    - _docs/architecture/system-overview.md
+    - _docs/architecture/components.md
+    - _docs/architecture/runtime-flows.md
+    - _docs/architecture/evolution-guidelines.md
+  prerequisite_specs:
+    - _docs/specs/phase-1-design.yaml
+    - _docs/specs/phase-2-memory.yaml
+
+required_context:
+  always_include:
+    - _docs/context-dump.md
+    - _docs/roadmap.yaml
+    - _docs/specs/phase-3-context-limits.yaml
+    - _docs/specs/phase-2-memory.yaml
+  architecture_required:
+    - _docs/architecture/components.md
+    - _docs/architecture/runtime-flows.md
+  architecture_optional:
+    - _docs/architecture/system-overview.md
+    - _docs/architecture/evolution-guidelines.md
+  optional:
+    - _docs/decisions/
+
+chat_bundle:
+  - _docs/context-dump.md
+  - _docs/roadmap.yaml
+  - _docs/specs/phase-3-context-limits.yaml
+  - _docs/specs/phase-2-memory.yaml
+  - _docs/architecture/components.md
+  - _docs/architecture/runtime-flows.md
+
+chat_prompt_template: |
+  Контекст проекта приложен в документах из `chat_bundle`.
+
+  Работай только в рамках spec:
+  `_docs/specs/phase-3-context-limits.yaml`
+
+  Сначала изучи файлы из `chat_bundle`.
+
+  Задача:
+  выполнить только `phase-3-context-limits`.
+
+  Ограничения:
+  - не выходить за scope, описанный в spec
+  - не реализовывать summarization
+  - не менять storage backend
+  - обновить связанные документы только если это требуется по spec
+
+  Ожидаемый результат:
+  - конфигурируемые лимиты истории
+  - trimming старых сообщений
+  - сохранение инвариантов контекста
+  - краткий отчет по шаблону `_docs/reports/phase-report.template.md`
+
+  После завершения фазы:
+  - сохрани краткий отчет в `_docs/reports/phase-3-context-limits-report.md`
+  - используй шаблон `_docs/reports/phase-report.template.md`
+  - зафиксируй в отчете: что сделано, что не сделано, какие решения приняты, какие отклонения от spec были и что важно для следующей фазы
+
+objective: >
+  Ограничить рост пользовательской истории за счет trimming policy без потери
+  актуального запроса и без нарушения будущей совместимости с summary.
+
+problem_statement:
+  - После добавления памяти история будет расти бесконтрольно.
+  - Длинный контекст ухудшит стоимость, скорость и предсказуемость поведения модели.
+  - Нужна четкая и настраиваемая политика обрезки истории.
+
+scope_in:
+  - Добавить конфиг для лимитов истории.
+  - Реализовать trimming по количеству сообщений и/или длине текста.
+  - Удалять самые старые сообщения при превышении лимита.
+  - Сохранить порядок оставшихся сообщений.
+  - Сохранить инварианты для system prompt и нового user message.
+
+scope_out:
+  - Summarization длинной истории.
+  - Полное логирование контекста.
+  - Смена storage backend.
+  - Сложная токен-ориентированная оптимизация.
+
+dependencies:
+  phases_required:
+    - phase-2-memory
+  assumptions:
+    - История уже хранится per-user.
+    - Формат messages array уже внедрен.
+    - Summary еще не реализован, но trimming нельзя проектировать так, чтобы summary потом ломался.
+
+implementation_notes:
+  - Базовая стратегия должна быть максимально простой и объяснимой.
+  - Предпочтительный default: limit по количеству сообщений.
+  - Дополнительный limit по длине текста допустим как safeguard.
+  - Нельзя удалять новый пользовательский запрос, который обрабатывается сейчас.
+
+files_to_touch:
+  required:
+    - app/config.py
+    - app/services/chat_service.py
+  allowed:
+    - app/
+    - tests/
+    - _docs/
+  avoid:
+    - unrelated UX changes
+    - premature summary implementation
+
+deliverables:
+  code:
+    - Конфигурируемая trimming policy.
+    - Логика сокращения старой части истории до отправки в модель.
+  docs:
+    - Обновление `_docs/context-dump.md` по фактическим ограничениям контекста.
+  tests:
+    - Тесты на trimming, порядок сообщений и инварианты.
+
+tasks:
+  - id: limits-1
+    title: Добавить настройки лимитов
+    status: done
+    description: >
+      Ввести конфигурационные параметры для ограничения истории и валидировать их.
+    notes:
+      - Минимум: max message count.
+      - Опционально: max context chars.
+
+  - id: limits-2
+    title: Реализовать trimming policy
+    status: done
+    description: >
+      Добавить логику удаления старых сообщений перед вызовом модели при превышении лимитов.
+    notes:
+      - Сохранять самые свежие сообщения.
+      - Не ломать структуру роли и порядок контекста.
+
+  - id: limits-3
+    title: Проверить инварианты
+    status: done
+    description: >
+      Убедиться, что после trimming остаются новый запрос, актуальная свежая история
+      и будущая совместимость с summary/system prompt.
+    notes:
+      - Если summary еще нет, оставить место под него в контракте.
+
+acceptance_criteria:
+  - История не растет бесконечно.
+  - Самые старые сообщения удаляются первыми.
+  - Новый пользовательский запрос остается в контексте.
+  - Порядок сообщений не нарушается.
+  - Лимиты задаются через конфиг.
+
+test_plan:
+  automated:
+    - Тест на trimming по количеству сообщений.
+    - Тест на сохранение порядка после trimming.
+    - Тест на сохранение нового user message.
+    - Тест на валидацию лимитов в конфиге.
+  manual:
+    - Накопить длинную историю и проверить, что в модель уходит только хвост контекста.
+
+risks:
+  - Слишком агрессивный trimming может резко ухудшить качество ответов.
+  - Если лимиты будут невалидируемыми, поведение станет трудно предсказуемым.
+  - Неправильный порядок trimming может повредить будущему summary.
+
+completion_update:
+  roadmap:
+    - Обновить `phase-3-context-limits.status`.
+    - Обновить статусы `limits-1`, `limits-2`, `limits-3`.
+  context_dump:
+    - Добавить фактические лимиты и правила trimming.
+    - Обновить `Known Limitations` и `Current State`.

@@ -1,0 +1,192 @@
+version: 1
+
+phase:
+  id: phase-7-tests
+  title: Тестовое покрытие
+  status: done
+  updated_at: 2026-04-15
+
+source:
+  roadmap: _docs/roadmap.yaml
+  context_dump: _docs/context-dump.md
+  architecture_docs:
+    - _docs/architecture/system-overview.md
+    - _docs/architecture/components.md
+    - _docs/architecture/runtime-flows.md
+    - _docs/architecture/evolution-guidelines.md
+  prerequisite_specs:
+    - _docs/specs/phase-2-memory.yaml
+    - _docs/specs/phase-3-context-limits.yaml
+    - _docs/specs/phase-4-summarization.yaml
+    - _docs/specs/phase-5-system-prompt.yaml
+    - _docs/specs/phase-6-observability.yaml
+
+required_context:
+  always_include:
+    - _docs/context-dump.md
+    - _docs/roadmap.yaml
+    - _docs/specs/phase-7-tests.yaml
+    - _docs/specs/phase-2-memory.yaml
+    - _docs/specs/phase-3-context-limits.yaml
+    - _docs/specs/phase-4-summarization.yaml
+    - _docs/specs/phase-5-system-prompt.yaml
+    - _docs/specs/phase-6-observability.yaml
+  architecture_required:
+    - _docs/architecture/components.md
+    - _docs/architecture/runtime-flows.md
+  architecture_optional:
+    - _docs/architecture/system-overview.md
+    - _docs/architecture/evolution-guidelines.md
+  optional:
+    - _docs/decisions/
+
+chat_bundle:
+  - _docs/context-dump.md
+  - _docs/roadmap.yaml
+  - _docs/specs/phase-7-tests.yaml
+  - _docs/specs/phase-2-memory.yaml
+  - _docs/specs/phase-3-context-limits.yaml
+  - _docs/specs/phase-4-summarization.yaml
+  - _docs/specs/phase-5-system-prompt.yaml
+  - _docs/specs/phase-6-observability.yaml
+  - _docs/architecture/components.md
+  - _docs/architecture/runtime-flows.md
+
+chat_prompt_template: |
+  Контекст проекта приложен в документах из `chat_bundle`.
+
+  Работай только в рамках spec:
+  `_docs/specs/phase-7-tests.yaml`
+
+  Сначала изучи файлы из `chat_bundle`.
+
+  Задача:
+  выполнить только `phase-7-tests`.
+
+  Ограничения:
+  - не выходить за scope, описанный в spec
+  - не делать лишних продуктовых изменений кроме тех, что нужны для testability
+  - сосредоточиться на регресс-тестах новых фаз
+  - обновить связанные документы только если это требуется по spec
+
+  Ожидаемый результат:
+  - тесты на memory, trimming, summary, system prompt и logging
+  - детерминированное покрытие без зависимости от реального Ollama
+  - краткий отчет по шаблону `_docs/reports/phase-report.template.md`
+
+  После завершения фазы:
+  - сохрани краткий отчет в `_docs/reports/phase-7-tests-report.md`
+  - используй шаблон `_docs/reports/phase-report.template.md`
+  - зафиксируй в отчете: что сделано, что не сделано, какие решения приняты, какие отклонения от spec были и что важно для следующей фазы
+
+objective: >
+  Закрыть новые возможности проекта регресс-тестами, чтобы дальнейшее развитие
+  памяти, trimming, summary и logging не происходило вслепую.
+
+problem_statement:
+  - Текущий набор тестов покрывает только MVP без памяти и расширенного контекста.
+  - После нескольких фаз подряд риск регрессий резко вырастет.
+  - Нужен финальный слой тестов, который подтверждает согласованность новой архитектуры.
+
+scope_in:
+  - Добавить тесты на per-user memory.
+  - Добавить тесты на trimming policy.
+  - Добавить тесты на summary workflow.
+  - Добавить тесты на system prompt в messages context.
+  - Добавить тесты на logging контекста и его размера.
+
+scope_out:
+  - Нагрузочное тестирование.
+  - E2E тесты с реальным Telegram API и реальным Ollama, если это не требуется для smoke-check.
+  - Полная CI/CD автоматизация.
+
+dependencies:
+  phases_required:
+    - phase-2-memory
+    - phase-3-context-limits
+    - phase-4-summarization
+    - phase-5-system-prompt
+    - phase-6-observability
+  assumptions:
+    - Основные функциональные изменения уже реализованы.
+    - Тесты можно строить на stub/fake клиентах и storage abstraction.
+
+implementation_notes:
+  - Предпочтительно покрывать сервисный слой и контракты, а не только handlers.
+  - Тесты должны быть детерминированными и не зависеть от реального LLM runtime.
+  - При появлении сложной логики допустимо разбить тесты по нескольким новым файлам.
+
+files_to_touch:
+  required:
+    - tests/
+    - tests/test_chat_service.py
+  allowed:
+    - app/
+    - _docs/
+  avoid:
+    - ненужные продуктовые изменения под тесты
+
+deliverables:
+  code:
+    - При необходимости небольшие refactor-for-testability изменения.
+  docs:
+    - Обновление `_docs/context-dump.md` о состоянии тестового покрытия.
+  tests:
+    - Новый набор unit и service-level тестов по всем новым фазам.
+
+tasks:
+  - id: test-1
+    title: Тесты на память по пользователям
+    status: done
+    description: >
+      Проверить изоляцию историй разных пользователей и корректное накопление сообщений.
+
+  - id: test-2
+    title: Тесты на trimming
+    status: done
+    description: >
+      Проверить удаление старых сообщений, сохранение порядка и сохранение нового запроса.
+
+  - id: test-3
+    title: Тесты на summary workflow
+    status: done
+    description: >
+      Проверить активацию summary branch и замену старой части истории summary message.
+
+  - id: test-4
+    title: Тесты на system prompt и контекст
+    status: done
+    description: >
+      Проверить, что system prompt включается в messages context и что в клиент уходит ожидаемый набор сообщений.
+
+  - id: test-5
+    title: Тесты на логирование
+    status: done
+    description: >
+      Проверить, что логируются контекст, размер и что секреты не попадают в логи.
+
+acceptance_criteria:
+  - Ключевые новые сценарии закрыты автотестами.
+  - Тесты не требуют реального Ollama для основного покрытия.
+  - Тесты подтверждают контракты между слоями, а не только отдельные функции.
+  - Набор тестов помогает ловить регрессии в памяти, trimming, summary, prompt и logging.
+
+test_plan:
+  automated:
+    - Прогнать весь `pytest` набор.
+    - Убедиться, что новые тесты покрывают все основные ветки новой логики.
+  manual:
+    - Проверить, что при поломке любого ключевого инварианта появляется падающий тест.
+
+risks:
+  - Если тесты будут слишком привязаны к внутренней реализации, они станут хрупкими.
+  - Если покрыть только happy path, регрессии в edge cases останутся.
+  - Слишком позднее добавление тестов может потребовать дополнительного рефакторинга для testability.
+
+completion_update:
+  roadmap:
+    - Обновить `phase-7-tests.status`.
+    - Обновить статусы `test-1` ... `test-5`.
+  context_dump:
+    - Обновить `Current State`.
+    - Добавить фактическое состояние тестового покрытия.

@@ -1,0 +1,176 @@
+version: 1
+
+phase:
+  id: phase-5-system-prompt
+  title: System prompt как часть реального контекста
+  status: done
+  updated_at: 2026-04-15
+
+source:
+  roadmap: _docs/roadmap.yaml
+  context_dump: _docs/context-dump.md
+  architecture_docs:
+    - _docs/architecture/system-overview.md
+    - _docs/architecture/components.md
+    - _docs/architecture/runtime-flows.md
+    - _docs/architecture/evolution-guidelines.md
+  prerequisite_specs:
+    - _docs/specs/phase-1-design.yaml
+    - _docs/specs/phase-2-memory.yaml
+
+required_context:
+  always_include:
+    - _docs/context-dump.md
+    - _docs/roadmap.yaml
+    - _docs/specs/phase-5-system-prompt.yaml
+    - _docs/specs/phase-1-design.yaml
+    - _docs/specs/phase-2-memory.yaml
+  architecture_required:
+    - _docs/architecture/components.md
+    - _docs/architecture/runtime-flows.md
+  architecture_optional:
+    - _docs/architecture/system-overview.md
+    - _docs/architecture/evolution-guidelines.md
+  optional:
+    - _docs/decisions/
+
+chat_bundle:
+  - _docs/context-dump.md
+  - _docs/roadmap.yaml
+  - _docs/specs/phase-5-system-prompt.yaml
+  - _docs/specs/phase-1-design.yaml
+  - _docs/specs/phase-2-memory.yaml
+  - _docs/architecture/components.md
+  - _docs/architecture/runtime-flows.md
+
+chat_prompt_template: |
+  Контекст проекта приложен в документах из `chat_bundle`.
+
+  Работай только в рамках spec:
+  `_docs/specs/phase-5-system-prompt.yaml`
+
+  Сначала изучи файлы из `chat_bundle`.
+
+  Задача:
+  выполнить только `phase-5-system-prompt`.
+
+  Ограничения:
+  - не выходить за scope, описанный в spec
+  - не делать полную observability в этой фазе
+  - не смешивать основной prompt и summarization prompt
+  - обновить связанные документы только если это требуется по spec
+
+  Ожидаемый результат:
+  - system prompt как часть messages context
+  - обновленный model client contract
+  - разделение prompt для reply и summary
+  - краткий отчет по шаблону `_docs/reports/phase-report.template.md`
+
+  После завершения фазы:
+  - сохрани краткий отчет в `_docs/reports/phase-5-system-prompt-report.md`
+  - используй шаблон `_docs/reports/phase-report.template.md`
+  - зафиксируй в отчете: что сделано, что не сделано, какие решения приняты, какие отклонения от spec были и что важно для следующей фазы
+
+objective: >
+  Сделать system prompt явной частью messages context и перевести интеграцию
+  с моделью на работу с полным контекстом, а не только с одиночным prompt string.
+
+problem_statement:
+  - В текущем MVP system prompt хранится отдельно и передается не как часть общего messages context.
+  - Для памяти, summary и observability нужен единый формат входа в модель.
+  - Без этого влияние system prompt будет менее прозрачным и хуже логируемым.
+
+scope_in:
+  - Включать system prompt как `system` message в контекст.
+  - Перевести client/service contract на работу с messages array.
+  - Отделить основной system prompt от summarization prompt.
+  - Сохранить фактическое влияние system prompt на ответы модели.
+
+scope_out:
+  - Полное логирование контекста.
+  - Summary workflow, кроме подготовки под него.
+  - Изменение UX команд `/start` и `/help`.
+
+dependencies:
+  phases_required:
+    - phase-1-design
+    - phase-2-memory
+  assumptions:
+    - История уже существует как messages array.
+    - Формат `system/user/assistant/summary` уже зафиксирован.
+    - Выбранный Ollama API позволяет эмулировать или поддерживать messages context.
+
+implementation_notes:
+  - Если текущий SDK вызов не принимает messages напрямую, нужно аккуратно адаптировать клиент, не ломая остальной контракт.
+  - Основной prompt и summarization prompt должны быть разнесены по файлам или явно разделены.
+  - System prompt всегда должен идти первым в фактическом контексте.
+
+files_to_touch:
+  required:
+    - app/services/chat_service.py
+    - app/clients/ollama_client.py
+    - app/prompts/
+  allowed:
+    - app/
+    - tests/
+    - _docs/
+  avoid:
+    - unrelated storage changes
+    - observability beyond minimal support needed for this phase
+
+deliverables:
+  code:
+    - Обновленный contract для вызова модели с messages context.
+    - System prompt как `system` message.
+    - Отдельный summarization prompt.
+  docs:
+    - Обновления `_docs/context-dump.md` и при необходимости архитектурных документов.
+  tests:
+    - Тесты на сборку полного контекста и положение system prompt.
+
+tasks:
+  - id: system-1
+    title: Встроить system prompt в messages context
+    status: done
+    description: >
+      Собирать итоговый контекст так, чтобы system prompt был первым message и
+      реально участвовал в запросе к модели.
+
+  - id: system-2
+    title: Обновить клиент модели
+    status: done
+    description: >
+      Привести клиент к контракту работы с полным context array вместо одного prompt string.
+
+  - id: system-3
+    title: Разделить prompt для reply и summary
+    status: done
+    description: >
+      Подготовить отдельный summarization prompt и не смешивать его с основным системным prompt.
+
+acceptance_criteria:
+  - System prompt входит в контекст как `system` message.
+  - В модель уходит полный messages context.
+  - Основной и summarization prompt разделены.
+  - Поведение бота остается совместимым с предыдущими фазами.
+
+test_plan:
+  automated:
+    - Тест на наличие system prompt в начале контекста.
+    - Тест на передачу полного messages array в клиент.
+    - Тест на использование отдельного summarization prompt contract.
+  manual:
+    - Проверить, что изменение system prompt влияет на стиль ответа модели.
+
+risks:
+  - SDK/API модели может плохо совпадать с желаемым messages contract.
+  - Неаккуратная адаптация клиента может сломать текущий response flow.
+  - Смешение обычного и summarization prompt ухудшит предсказуемость поведения.
+
+completion_update:
+  roadmap:
+    - Обновить `phase-5-system-prompt.status`.
+    - Обновить статусы `system-1`, `system-2`, `system-3`.
+  context_dump:
+    - Обновить `Current Behavior`.
+    - Добавить информацию о system prompt как части messages context.

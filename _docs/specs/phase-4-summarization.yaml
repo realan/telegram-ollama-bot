@@ -1,0 +1,181 @@
+version: 1
+
+phase:
+  id: phase-4-summarization
+  title: Суммаризация длинной истории
+  status: done
+  updated_at: 2026-04-15
+
+source:
+  roadmap: _docs/roadmap.yaml
+  context_dump: _docs/context-dump.md
+  architecture_docs:
+    - _docs/architecture/system-overview.md
+    - _docs/architecture/components.md
+    - _docs/architecture/runtime-flows.md
+    - _docs/architecture/evolution-guidelines.md
+  prerequisite_specs:
+    - _docs/specs/phase-1-design.yaml
+    - _docs/specs/phase-3-context-limits.yaml
+    - _docs/specs/phase-5-system-prompt.yaml
+
+required_context:
+  always_include:
+    - _docs/context-dump.md
+    - _docs/roadmap.yaml
+    - _docs/specs/phase-4-summarization.yaml
+    - _docs/specs/phase-3-context-limits.yaml
+    - _docs/specs/phase-5-system-prompt.yaml
+  architecture_required:
+    - _docs/architecture/runtime-flows.md
+    - _docs/architecture/components.md
+  architecture_optional:
+    - _docs/architecture/system-overview.md
+    - _docs/architecture/evolution-guidelines.md
+  optional:
+    - _docs/decisions/
+
+chat_bundle:
+  - _docs/context-dump.md
+  - _docs/roadmap.yaml
+  - _docs/specs/phase-4-summarization.yaml
+  - _docs/specs/phase-3-context-limits.yaml
+  - _docs/specs/phase-5-system-prompt.yaml
+  - _docs/architecture/components.md
+  - _docs/architecture/runtime-flows.md
+
+chat_prompt_template: |
+  Контекст проекта приложен в документах из `chat_bundle`.
+
+  Работай только в рамках spec:
+  `_docs/specs/phase-4-summarization.yaml`
+
+  Сначала изучи файлы из `chat_bundle`.
+
+  Задача:
+  выполнить только `phase-4-summarization`.
+
+  Ограничения:
+  - не выходить за scope, описанный в spec
+  - не переделывать заново память и trimming вне необходимого
+  - реализовать только summary workflow и его хранение в истории
+  - обновить связанные документы только если это требуется по spec
+
+  Ожидаемый результат:
+  - summary branch
+  - замена старой части истории summary message
+  - использование summary в следующих запросах
+  - краткий отчет по шаблону `_docs/reports/phase-report.template.md`
+
+  После завершения фазы:
+  - сохрани краткий отчет в `_docs/reports/phase-4-summarization-report.md`
+  - используй шаблон `_docs/reports/phase-report.template.md`
+  - зафиксируй в отчете: что сделано, что не сделано, какие решения приняты, какие отклонения от spec были и что важно для следующей фазы
+
+objective: >
+  Добавить workflow сжатия длинной истории: превращать старую часть диалога
+  в краткое summary и продолжать разговор на основе summary плюс свежих сообщений.
+
+problem_statement:
+  - Trimming сохраняет только хвост истории и может терять важный долгосрочный контекст.
+  - Нужен компромисс между размером контекста и сохранением смысла прошлых сообщений.
+  - Summary должно быть встроено в существующий messages contract без хаоса в storage.
+
+scope_in:
+  - Добавить summarization prompt и отдельную ветку вызова LLM для summary.
+  - Выделять старую часть истории при превышении порога.
+  - Заменять старую часть одним summary-сообщением.
+  - Использовать summary в последующих запросах.
+  - Сделать порог summary настраиваемым.
+
+scope_out:
+  - Персистентное хранение summary вне текущего storage.
+  - Сложная иерархическая summary-система.
+  - Оптимизация качества summary под разные типы задач.
+  - Полноценная observability токенов.
+
+dependencies:
+  phases_required:
+    - phase-3-context-limits
+    - phase-5-system-prompt
+  assumptions:
+    - Messages context и storage contract уже согласованы.
+    - Summary вписывается в тот же общий формат `role/content`.
+    - System prompt для обычного ответа и summary можно разделить.
+
+implementation_notes:
+  - Summary должно быть коротким и утилитарным.
+  - Нельзя допускать бесконтрольное повторное саммаризирование summary без правил.
+  - Важно различать обычный LLM call и summarization call.
+  - Свежие сообщения должны иметь приоритет над давним summary.
+
+files_to_touch:
+  required:
+    - app/services/chat_service.py
+    - app/prompts/
+  allowed:
+    - app/
+    - tests/
+    - _docs/
+  avoid:
+    - широкие рефакторинги вне summary flow
+
+deliverables:
+  code:
+    - Summary workflow.
+    - Отдельный prompt для summarization.
+    - Замена части истории на summary message.
+  docs:
+    - Обновления в `_docs/context-dump.md` по поведению summary.
+  tests:
+    - Тесты на запуск summary branch и замену истории.
+
+tasks:
+  - id: summary-1
+    title: Добавить summarization branch
+    status: done
+    description: >
+      При превышении порога выделять старую часть истории и отправлять ее в модель
+      с отдельным summarization prompt.
+
+  - id: summary-2
+    title: Сохранять summary в истории
+    status: done
+    description: >
+      После получения краткого summary заменять старые сообщения одним summary message
+      и использовать его в следующих запросах.
+
+  - id: summary-3
+    title: Защитить summary от деградации
+    status: done
+    description: >
+      Ограничить длину summary и не допустить бесконечной потери смысла
+      через повторное сжатие без правил.
+
+acceptance_criteria:
+  - При превышении порога срабатывает summary workflow.
+  - Старая часть истории заменяется summary message.
+  - Последующие запросы используют summary плюс свежую историю.
+  - Порог summary настраивается.
+  - Поведение не ломает обычный reply flow.
+
+test_plan:
+  automated:
+    - Тест на активацию summary branch.
+    - Тест на замену части истории одним summary message.
+    - Тест на последующее использование summary в контексте.
+  manual:
+    - Накопить длинный диалог и проверить, что старая часть схлопывается, а смысл разговора не теряется полностью.
+
+risks:
+  - Summary может искажать смысл старой части диалога.
+  - Дополнительный LLM call увеличит latency и стоимость обработки.
+  - Плохое управление повторной summary приведет к деградации качества.
+
+completion_update:
+  roadmap:
+    - Обновить `phase-4-summarization.status`.
+    - Обновить статусы `summary-1`, `summary-2`, `summary-3`.
+  context_dump:
+    - Добавить описание summary behavior.
+    - Обновить `Known Limitations` и `Current State`.

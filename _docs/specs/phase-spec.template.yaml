@@ -1,0 +1,152 @@
+version: 1
+
+phase:
+  id: phase-x
+  title: Название фазы
+  status: planned
+  updated_at: 2026-04-14
+
+source:
+  roadmap: _docs/roadmap.yaml
+  context_dump: _docs/context-dump.md
+  architecture_docs:
+    - _docs/architecture/system-overview.md
+    - _docs/architecture/components.md
+    - _docs/architecture/runtime-flows.md
+    - _docs/architecture/evolution-guidelines.md
+
+required_context:
+  always_include:
+    - _docs/context-dump.md
+    - _docs/roadmap.yaml
+    - path/to/current-phase-spec.yaml
+  architecture_required:
+    - _docs/architecture/system-overview.md
+    - _docs/architecture/components.md
+  architecture_optional:
+    - _docs/architecture/runtime-flows.md
+    - _docs/architecture/evolution-guidelines.md
+  optional:
+    - _docs/decisions/
+  note: >
+    Этот блок нужен как явный чеклист того, что передавать в новый чат.
+    Он должен минимизировать ручной поиск нужных документов.
+
+chat_bundle:
+  - _docs/context-dump.md
+  - _docs/roadmap.yaml
+  - path/to/current-phase-spec.yaml
+  - _docs/architecture/system-overview.md
+  - _docs/architecture/components.md
+  note: >
+    Это готовый плоский список файлов для нового чата.
+    Если нужен минимальный набор без размышлений, используй именно его.
+
+chat_prompt_template: |
+  Контекст проекта приложен в документах из `chat_bundle`.
+
+  Работай только в рамках spec:
+  `path/to/current-phase-spec.yaml`
+
+  Сначала изучи файлы из `chat_bundle`.
+
+  Задача:
+  выполнить только эту фазу.
+
+  Ограничения:
+  - не выходить за scope, описанный в spec
+  - не начинать реализацию следующих фаз
+  - обновить связанные документы только если это требуется по spec
+
+  Ожидаемый результат:
+  - завершенная текущая фаза
+  - изменения только в разрешенных областях
+  - краткий отчет по шаблону `_docs/reports/phase-report.template.md`
+
+  После завершения фазы:
+  - сохрани краткий отчет в `_docs/reports/` в файле формата `phase-<id>-report.md`
+  - используй шаблон `_docs/reports/phase-report.template.md`
+  - зафиксируй в отчете: что сделано, что не сделано, какие решения приняты, какие отклонения от spec были и что важно для следующей фазы
+
+objective: >
+  Коротко: какой конкретный результат должен быть достигнут по итогам этой фазы.
+
+problem_statement:
+  - Что сейчас не реализовано.
+  - Почему это нужно добавить именно в этой фазе.
+  - Какие ограничения текущего состояния нужно сохранить.
+
+scope_in:
+  - Что входит в эту фазу.
+  - Какие изменения должны быть сделаны.
+
+scope_out:
+  - Что точно не входит в эту фазу.
+  - Какие соседние идеи нужно сознательно отложить.
+
+dependencies:
+  phases_required:
+    - phase-y
+  assumptions:
+    - Какие решения уже считаются принятыми.
+    - Какие части проекта должны остаться без изменений.
+
+implementation_notes:
+  - Важные инженерные ограничения.
+  - Нежелательные направления реализации.
+  - Предпочтительные структуры или модули.
+
+files_to_touch:
+  required:
+    - app/example.py
+  allowed:
+    - app/
+    - tests/
+    - _docs/
+  avoid:
+    - unrelated files
+
+deliverables:
+  code:
+    - Какие модули должны появиться или измениться.
+  docs:
+    - Какие документы нужно обновить после завершения.
+    - Какой отчет по фазе нужно сохранить в `_docs/reports/`.
+  tests:
+    - Какие тесты должны появиться или быть обновлены.
+
+tasks:
+  - id: task-1
+    title: Название задачи
+    status: planned
+    description: >
+      Что конкретно нужно сделать.
+    notes:
+      - Дополнительные детали.
+
+acceptance_criteria:
+  - Изменение работает end-to-end.
+  - Ограничения фазы соблюдены.
+  - Код покрыт нужными тестами.
+
+test_plan:
+  automated:
+    - Какие unit/integration тесты должны быть добавлены или прогнаны.
+  manual:
+    - Какие сценарии стоит проверить руками.
+
+risks:
+  - Что может пойти не так.
+  - Какие компромиссы приняты.
+
+completion_update:
+  roadmap:
+    - Обновить статус текущей фазы.
+    - При необходимости обновить статусы задач.
+  context_dump:
+    - Обновить Current State.
+    - Обновить Implemented Phases.
+    - Обновить Known Limitations.
+  report:
+    - Сохранить краткий отчет по фазе в `_docs/reports/phase-x-report.md`.
+    - Зафиксировать, что сделано, что не сделано и что важно для следующей фазы.

@@ -1,0 +1,371 @@
+version: 1
+
+project:
+  name: telegram-bot-local-llm
+  scope: next-iteration
+  objective: >
+    Развить MVP Telegram-бота до версии с псевдо-памятью по пользователям,
+    ограничением контекста, суммаризацией истории, явным system prompt в контексте
+    и полным логированием входа в модель.
+
+assumptions:
+  - История хранится отдельно для каждого пользователя Telegram.
+  - На текущем этапе допустимо in-memory хранение без БД.
+  - Формат истории по умолчанию JSON-like messages: role/content.
+  - Подсчет токенов может быть оценочным, если у модели нет доступного токенизатора.
+  - Реализация должна минимально ломать текущую архитектуру MVP.
+
+target-capabilities:
+  - Персонифицированная история сообщений для каждого пользователя.
+  - Ограничение контекста по настраиваемому правилу.
+  - Автоматическое сжатие длинной истории в summary.
+  - System prompt как часть фактического контекста модели.
+  - Наблюдаемость: полный лог контекста и его размера перед LLM-вызовом.
+
+phases:
+  - id: phase-1-design
+    title: Архитектурная подготовка
+    status: done
+    updated_at: 2026-04-14
+    depends_on: []
+    goal: >
+      Подготовить расширение текущего MVP без смешивания Telegram-слоя,
+      памяти и логики вызова модели.
+    tasks:
+      - id: design-1
+        title: Зафиксировать формат контекста и историю сообщений
+        status: done
+        actions:
+          - Выбрать единый внутренний формат messages: role/content.
+          - Определить, как представлять system prompt в общем контексте.
+          - Зафиксировать типы сообщений: system, user, assistant, summary.
+        outputs:
+          - Обновленный контракт model context для ChatService и OllamaClient.
+      - id: design-2
+        title: Спроектировать memory layer
+        status: done
+        actions:
+          - Ввести отдельный abstraction для хранения истории пользователя.
+          - Определить ключ пользователя для сегрегации истории.
+          - Решить, как хранить summary вместе с обычными сообщениями.
+        outputs:
+          - Интерфейс наподобие ConversationStore или HistoryStore.
+      - id: design-3
+        title: Определить политику ограничения контекста
+        status: done
+        actions:
+          - Выбрать основной лимит: по числу сообщений, по длине текста или комбинированный.
+          - Зафиксировать пороги для trim и для summary.
+          - Определить порядок удаления старых сообщений.
+        outputs:
+          - Конфигурируемая policy для context window management.
+    notes:
+      - "Контракт зафиксирован в `_docs/decisions/001-context-contract-and-memory.md`."
+      - "Внутренний runtime format: ordered messages array `{role, content}` с ролями `system`, `user`, `assistant`, `summary`."
+      - "System prompt не хранится в per-user history и всегда материализуется первым элементом фактического model context."
+      - "Для памяти принят `ConversationStore` с сегрегацией по `user_id` и операцией `replace_after_summary`."
+      - "Context policy: primary limit по числу сообщений, secondary safety limit по суммарной длине текста."
+
+  - id: phase-2-memory
+    title: Псевдо-память по пользователям
+    status: done
+    updated_at: 2026-04-14
+    depends_on:
+      - phase-1-design
+    goal: Реализовать независимую историю диалога для каждого пользователя.
+    tasks:
+      - id: memory-1
+        title: Добавить storage для истории
+        status: done
+        actions:
+          - Создать in-memory хранилище сообщений по user_id.
+          - Реализовать методы чтения, добавления и замены истории.
+          - Предусмотреть безопасное поведение для нового пользователя без истории.
+        touched-modules:
+          - app/services/
+          - app/utils/ or new app/memory/
+      - id: memory-2
+        title: Передавать историю в модель
+        status: done
+        actions:
+          - Изменить ChatService так, чтобы он собирал историю пользователя + новое сообщение.
+          - После ответа модели сохранять assistant message в историю.
+          - Убедиться, что контекст собирается отдельно для каждого user_id.
+        touched-modules:
+          - app/services/chat_service.py
+          - app/bot/handlers/chat.py
+          - app/clients/ollama_client.py
+      - id: memory-3
+        title: Поддержать формат истории
+        status: done
+        actions:
+          - Хранить сообщения в формате массива объектов role/content.
+          - Опционально предусмотреть YAML-представление только для отладки или экспорта.
+        notes:
+          - YAML не должен становиться основным runtime-форматом без необходимости.
+
+  - id: phase-3-context-limits
+    title: Ограничение размера контекста
+    status: done
+    updated_at: 2026-04-14
+    depends_on:
+      - phase-2-memory
+    goal: Не допускать бесконтрольного роста истории.
+    tasks:
+      - id: limits-1
+        title: Ввести настройки лимитов
+        status: done
+        actions:
+          - Добавить env-переменные или конфиг для max message count.
+          - Добавить env-переменные или конфиг для max context chars.
+          - Добавить порог количества сообщений для включения summary.
+        touched-modules:
+          - app/config.py
+      - id: limits-2
+        title: Реализовать trimming истории
+        status: done
+        actions:
+          - Перед вызовом модели вычислять размер истории.
+          - При превышении лимита удалять самые старые сообщения.
+          - Сохранять порядок оставшихся сообщений.
+        decision:
+          primary_strategy: keep_recent_messages
+          fallback_strategy: trim_by_total_text_length
+      - id: limits-3
+        title: Проверить инварианты контекста
+        status: done
+        actions:
+          - Не удалять новый пользовательский запрос.
+          - Не терять актуальный summary, если он уже существует.
+          - System prompt всегда держать в начале фактического контекста.
+
+  - id: phase-4-summarization
+    title: Суммаризация длинной истории
+    status: done
+    updated_at: 2026-04-15
+    depends_on:
+      - phase-3-context-limits
+      - phase-5-system-prompt
+    goal: Сжимать старую часть диалога, сохраняя полезный контекст.
+    tasks:
+      - id: summary-1
+        title: Ввести summary workflow
+        status: done
+        actions:
+          - Если история превышает заданный порог, выделять старую часть для сжатия.
+          - Отправлять эту часть в LLM с отдельным summarization prompt.
+          - Получать краткое текстовое summary.
+        touched-modules:
+          - app/services/chat_service.py
+          - app/prompts/
+      - id: summary-2
+        title: Сохранять summary в истории
+        status: done
+        actions:
+          - Заменять часть старых сообщений на одно summary-сообщение.
+          - Хранить summary отдельно для каждого пользователя.
+          - Продолжать диалог, используя summary + свежие сообщения.
+        constraints:
+          - Порог активации summary сделать настраиваемым.
+          - Базовый дефолт можно выставить в 5 сообщений.
+      - id: summary-3
+        title: Защититься от деградации summary
+        status: done
+        actions:
+          - Ограничить длину summary.
+          - Не допускать бесконечного summary-summary-summary без контроля.
+          - В логах различать обычный ответ и summarization request.
+
+  - id: phase-5-system-prompt
+    title: System prompt как часть реального контекста
+    status: done
+    updated_at: 2026-04-15
+    depends_on:
+      - phase-1-design
+      - phase-2-memory
+    goal: Сделать влияние system prompt явным и наблюдаемым.
+    tasks:
+      - id: system-1
+        title: Встроить system prompt в messages context
+        status: done
+        actions:
+          - Загружать system prompt как system message.
+          - Всегда включать его в контекст перед user/assistant history.
+          - Привести клиент модели к работе с полным messages context вместо только prompt string.
+        touched-modules:
+          - app/services/chat_service.py
+          - app/clients/ollama_client.py
+      - id: system-2
+        title: Отделить prompt для основного ответа и для summary
+        status: done
+        actions:
+          - Добавить отдельный summarization prompt.
+          - Не смешивать основной system prompt и prompt суммаризации.
+        touched-modules:
+          - app/prompts/
+      - id: system-3
+        title: Обновить контракт вызова модели
+        status: done
+        actions:
+          - Передавать в клиент полный ordered messages context.
+          - Сохранить совместимость поведения для обычного ответа и summary workflow.
+        touched-modules:
+          - app/services/chat_service.py
+          - app/clients/ollama_client.py
+
+  - id: phase-6-observability
+    title: Логирование контекста и его размера
+    status: done
+    updated_at: 2026-04-15
+    depends_on:
+      - phase-5-system-prompt
+    goal: Видеть, что именно получает модель на вход.
+    tasks:
+      - id: obs-1
+        title: Логировать полный контекст
+        status: done
+        actions:
+          - Перед каждым вызовом модели логировать весь messages context.
+          - Логировать тип вызова: regular_reply или summary_generation.
+          - При необходимости вынести лог формата JSON в отдельный helper.
+      - id: obs-2
+        title: Логировать размер контекста
+        status: done
+        actions:
+          - Считать количество сообщений.
+          - Считать суммарную длину текста.
+          - Считать или оценивать количество токенов.
+        notes:
+          - Если точный tokenizer для модели недоступен, использовать приближение и явно отметить это в логах.
+      - id: obs-3
+        title: Проверить безопасность логов
+        status: done
+        actions:
+          - Не логировать bot token и прочие секреты.
+          - Явно задокументировать, что пользовательские сообщения теперь попадают в логи.
+          - При необходимости предусмотреть флаг для отключения полного логирования в production.
+
+  - id: phase-7-tests
+    title: Тестовое покрытие
+    status: done
+    updated_at: 2026-04-15
+    depends_on:
+      - phase-2-memory
+      - phase-3-context-limits
+      - phase-4-summarization
+      - phase-5-system-prompt
+      - phase-6-observability
+    goal: Закрыть новые сценарии регресс-тестами.
+    tasks:
+      - id: test-1
+        title: Тесты на память по пользователям
+        status: done
+        actions:
+          - Проверить, что истории двух пользователей изолированы.
+          - Проверить, что после ответа assistant сообщение сохраняется.
+      - id: test-2
+        title: Тесты на trimming
+        status: done
+        actions:
+          - Проверить удаление самых старых сообщений.
+          - Проверить сохранение порядка и актуального запроса.
+      - id: test-3
+        title: Тесты на summary workflow
+        status: done
+        actions:
+          - Проверить, что при превышении порога вызывается summarization branch.
+          - Проверить, что старая часть истории заменяется summary.
+      - id: test-4
+        title: Тесты на system prompt и контекст
+        status: done
+        actions:
+          - Проверить, что system prompt включается в messages context.
+          - Проверить, что в модель уходит полный ожидаемый набор сообщений.
+      - id: test-5
+        title: Тесты на логирование
+        status: done
+        actions:
+          - Проверить, что логируются контекст и его размер.
+          - Проверить отсутствие секретов в логах.
+
+  - id: phase-8-clear-command
+    title: Команда /clear для сброса истории
+    status: planned
+    updated_at: 2026-04-15
+    depends_on:
+      - phase-2-memory
+      - phase-7-tests
+    goal: >
+      Дать пользователю возможность явно сбросить историю диалога командой /clear,
+      чтобы следующий запрос обрабатывался без предыдущего контекста.
+    tasks:
+      - id: clear-1
+        title: Добавить обработчик команды /clear
+        status: planned
+        actions:
+          - Зарегистрировать handler для команды /clear в router.
+          - Вызывать conversation_store.clear(user_id) из handler.
+          - Отвечать пользователю подтверждением сброса.
+        touched-modules:
+          - app/bot/handlers/
+          - app/bot/router.py
+      - id: clear-2
+        title: Покрыть тестами
+        status: planned
+        actions:
+          - Тест на успешный сброс истории командой /clear.
+          - Тест на то, что после /clear следующий запрос идёт без контекста.
+        touched-modules:
+          - tests/
+
+implementation-order:
+  - phase-1-design
+  - phase-2-memory
+  - phase-3-context-limits
+  - phase-5-system-prompt
+  - phase-4-summarization
+  - phase-6-observability
+  - phase-7-tests
+  - phase-8-clear-command
+
+recommended-config:
+  memory_store: in_memory
+  history_format: messages_array
+  max_messages_per_user: 10
+  max_context_chars: 12000
+  summary_trigger_messages: 5
+  summary_max_chars: 500
+  log_full_context: true
+  log_context_tokens: true
+
+expected-code-changes:
+  - app/config.py
+  - app/services/chat_service.py
+  - app/clients/ollama_client.py
+  - app/bot/handlers/chat.py
+  - app/utils/exceptions.py
+  - app/prompts/system_prompt.txt
+  - tests/test_chat_service.py
+  - tests/
+  - new modules for memory/context management
+
+acceptance-criteria:
+  - Для каждого пользователя ведется отдельная история сообщений.
+  - При новом запросе модель получает system prompt, историю и новое сообщение.
+  - История не растет бесконечно и ограничивается policy.
+  - При превышении порога старая часть истории схлопывается в summary.
+  - Summary используется в следующих запросах.
+  - Перед вызовом модели логируется полный контекст.
+  - В логах есть размер контекста и оценка токенов.
+  - Новая логика покрыта автотестами.
+
+risks:
+  - In-memory storage теряет историю при рестарте процесса.
+  - Полное логирование контекста может быть чувствительным для production.
+  - Оценочный подсчет токенов может отличаться от реального tokenizer модели.
+  - Частая суммаризация увеличит количество вызовов LLM и задержку ответа.
+
+next-adr-candidates:
+  - Где и как хранить историю: in-memory vs file vs database.
+  - Как измерять размер контекста: chars vs messages vs tokenizer.
+  - Когда и как выполнять summarization.

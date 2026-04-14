@@ -1,0 +1,192 @@
+version: 1
+
+phase:
+  id: phase-2-memory
+  title: Псевдо-память по пользователям
+  status: done
+  updated_at: 2026-04-14
+
+source:
+  roadmap: _docs/roadmap.yaml
+  context_dump: _docs/context-dump.md
+  architecture_docs:
+    - _docs/architecture/system-overview.md
+    - _docs/architecture/components.md
+    - _docs/architecture/runtime-flows.md
+    - _docs/architecture/evolution-guidelines.md
+  prerequisite_specs:
+    - _docs/specs/phase-1-design.yaml
+
+required_context:
+  always_include:
+    - _docs/context-dump.md
+    - _docs/roadmap.yaml
+    - _docs/specs/phase-2-memory.yaml
+    - _docs/specs/phase-1-design.yaml
+  architecture_required:
+    - _docs/architecture/system-overview.md
+    - _docs/architecture/components.md
+    - _docs/architecture/runtime-flows.md
+  architecture_optional:
+    - _docs/architecture/evolution-guidelines.md
+  optional:
+    - _docs/decisions/
+
+chat_bundle:
+  - _docs/context-dump.md
+  - _docs/roadmap.yaml
+  - _docs/specs/phase-2-memory.yaml
+  - _docs/specs/phase-1-design.yaml
+  - _docs/architecture/system-overview.md
+  - _docs/architecture/components.md
+  - _docs/architecture/runtime-flows.md
+
+chat_prompt_template: |
+  Контекст проекта приложен в документах из `chat_bundle`.
+
+  Работай только в рамках spec:
+  `_docs/specs/phase-2-memory.yaml`
+
+  Сначала изучи файлы из `chat_bundle`.
+
+  Задача:
+  выполнить только `phase-2-memory`.
+
+  Ограничения:
+  - не выходить за scope, описанный в spec
+  - не начинать trimming, summarization и observability
+  - реализовать только per-user memory и базовый history flow
+  - обновить связанные документы только если это требуется по spec
+
+  Ожидаемый результат:
+  - per-user in-memory history
+  - сохранение user/assistant сообщений
+  - изоляция истории разных пользователей
+  - краткий отчет по шаблону `_docs/reports/phase-report.template.md`
+
+  После завершения фазы:
+  - сохрани краткий отчет в `_docs/reports/phase-2-memory-report.md`
+  - используй шаблон `_docs/reports/phase-report.template.md`
+  - зафиксируй в отчете: что сделано, что не сделано, какие решения приняты, какие отклонения от spec были и что важно для следующей фазы
+
+objective: >
+  Реализовать хранение истории диалога отдельно для каждого пользователя Telegram
+  в формате messages array и встроить эту историю в основной сценарий обработки сообщений.
+
+problem_statement:
+  - Текущий MVP не хранит историю сообщений и обрабатывает каждый запрос изолированно.
+  - Для следующих фаз нужны реальные данные контекста на уровне пользователя.
+  - Без отдельного memory layer ChatService быстро начнет смешивать orchestration и хранение.
+
+scope_in:
+  - Реализовать in-memory storage истории по `user_id`.
+  - Хранить сообщения в формате `{role, content}`.
+  - Передавать в сервис историю пользователя и новое сообщение.
+  - После ответа модели сохранять `assistant` message в историю.
+  - Обеспечить полную изоляцию истории разных пользователей.
+
+scope_out:
+  - Ограничение длины истории и trimming.
+  - Summarization.
+  - Полное логирование контекста.
+  - Точный токен-каунт.
+  - Персистентное хранилище, файл или БД.
+
+dependencies:
+  phases_required:
+    - phase-1-design
+  assumptions:
+    - Формат messages context и memory abstraction уже зафиксированы.
+    - На этом этапе допустимо хранение только в памяти процесса.
+    - System prompt пока может оставаться в текущем виде, если не мешает memory flow.
+
+implementation_notes:
+  - Предпочтительно вынести хранилище в новый модуль, а не встраивать словари в handler или service.
+  - Telegram-specific объекты не должны попадать в memory layer.
+  - Интерфейс хранения должен быть совместим с будущим summary workflow.
+  - Если потребуется изменить контракт ChatService, делать это явно и минимально.
+
+files_to_touch:
+  required:
+    - app/services/chat_service.py
+    - app/bot/handlers/chat.py
+  allowed:
+    - app/clients/ollama_client.py
+    - app/utils/exceptions.py
+    - app/
+    - tests/
+    - _docs/
+  avoid:
+    - unrelated handlers
+    - архитектурные изменения вне темы памяти
+
+deliverables:
+  code:
+    - In-memory storage истории по пользователям.
+    - Обновленный ChatService с поддержкой пользовательской истории.
+    - Обновленный flow сохранения user/assistant сообщений.
+  docs:
+    - При необходимости обновления в `_docs/context-dump.md`.
+    - При необходимости ADR по storage contract.
+  tests:
+    - Тесты на изоляцию истории пользователей.
+    - Тесты на сохранение assistant reply в историю.
+
+tasks:
+  - id: memory-1
+    title: Добавить storage для истории
+    status: done
+    description: >
+      Реализовать in-memory abstraction для чтения и записи истории сообщений по `user_id`.
+    notes:
+      - Новый пользователь должен стартовать с пустой историей.
+      - Нужны операции чтения, append и, возможно, replace на будущее.
+
+  - id: memory-2
+    title: Встроить историю в основной flow
+    status: done
+    description: >
+      Изменить ChatService и вызывающий слой так, чтобы перед ответом модели
+      использовалась история пользователя и после ответа история пополнялась.
+    notes:
+      - Нужно явно решить, где формируется новый `user` message.
+      - Не терять текущее поведение user-facing ошибок.
+
+  - id: memory-3
+    title: Зафиксировать формат runtime history
+    status: done
+    description: >
+      Убедиться, что runtime-структура совпадает с будущими needs для system prompt,
+      trimming и summary.
+    notes:
+      - Основной runtime-формат должен оставаться messages array.
+
+acceptance_criteria:
+  - Для каждого пользователя история ведется отдельно.
+  - При повторном сообщении пользователя в сервис доступна его предыдущая история.
+  - После ответа модели в историю сохраняется assistant message.
+  - Формат истории соответствует `{role, content}`.
+  - Реализация не затрагивает еще не начатые фазы вроде trimming и summary.
+
+test_plan:
+  automated:
+    - Добавить тесты на раздельные истории двух пользователей.
+    - Добавить тест на сохранение пары user/assistant.
+    - Добавить тест на новый пользовательский запрос без истории.
+  manual:
+    - Отправить несколько сообщений от одного пользователя и проверить накопление истории.
+    - Проверить, что сообщения другого пользователя не влияют на первый контекст.
+
+risks:
+  - Слишком простой storage contract может затруднить будущий summary workflow.
+  - Если ChatService начнет знать слишком много о Telegram user object, слои размоются.
+  - In-memory состояние пропадет при рестарте процесса, но это допустимо для текущей фазы.
+
+completion_update:
+  roadmap:
+    - Обновить `phase-2-memory.status`.
+    - Обновить статусы `memory-1`, `memory-2`, `memory-3`.
+  context_dump:
+    - Обновить `Current State`.
+    - Обновить `Implemented Phases`.
+    - Указать, что память стала per-user и in-memory.
